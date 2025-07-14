@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartBiz - Sales & Inventory System</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .low-stock {
+      background-color: #fff3cd;
+    }
+    input:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+    }
+  </style>
+</head>
+<body class="bg-gray-100 p-4">
+  <div class="max-w-7xl mx-auto">
+    <header class="text-center mb-6">
+      <h1 class="text-4xl font-bold text-blue-600">SmartBiz</h1>
+      <p class="text-gray-600">Advanced Sales & Inventory Manager By Hussain</p>
+    </header>
+
+    <section class="bg-white p-4 rounded shadow">
+      <h2 class="text-xl font-semibold mb-2">Add Product to Inventory</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <input type="text" id="pName" placeholder="Product Name" class="p-2 border rounded" />
+        <input type="number" id="pQty" placeholder="Quantity" class="p-2 border rounded" />
+        <input type="number" id="pPrice" placeholder="Price" class="p-2 border rounded" />
+        <button onclick="addProduct()" class="bg-blue-600 text-white p-2 rounded hover:bg-blue-700">Add</button>
+      </div>
+    </section>
+
+    <section class="bg-white p-4 rounded shadow mt-6">
+      <h2 class="text-xl font-semibold mb-2">Inventory</h2>
+      <input type="text" id="searchBar" placeholder="Search products..." oninput="renderProducts()" class="w-full p-2 border rounded mb-4" />
+      <table class="w-full table-auto border-collapse">
+        <thead>
+          <tr class="bg-gray-200">
+            <th class="border p-2">Name</th>
+            <th class="border p-2">Qty</th>
+            <th class="border p-2">Price</th>
+            <th class="border p-2">Total</th>
+            <th class="border p-2">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="inventoryTable"></tbody>
+      </table>
+      <div class="text-right font-bold mt-2" id="summary"></div>
+    </section>
+
+    <section class="bg-white p-4 rounded shadow mt-6">
+      <h2 class="text-xl font-semibold mb-2">Sales Report (Separate)</h2>
+      <ul id="salesReport" class="list-disc pl-5 text-green-700"></ul>
+    </section>
+
+    <section class="bg-white p-4 rounded shadow mt-6">
+      <h2 class="text-xl font-semibold mb-2">Stock Left (Separate)</h2>
+      <ul id="stockLeftReport" class="list-disc pl-5 text-red-700"></ul>
+    </section>
+
+    <section class="bg-white p-4 rounded shadow mt-6">
+      <h2 class="text-xl font-semibold mb-2">Invoice Maker (Separate)</h2>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+        <input type="text" id="iName" placeholder="Item Name" class="p-2 border rounded" />
+        <input type="number" id="iQty" placeholder="Quantity" class="p-2 border rounded" />
+        <input type="number" id="iPrice" placeholder="Price" class="p-2 border rounded" />
+        <button onclick="addInvoiceItem()" class="bg-green-600 text-white p-2 rounded hover:bg-green-700">Add to Invoice</button>
+      </div>
+      <table class="w-full table-auto border-collapse">
+        <thead>
+          <tr class="bg-green-200">
+            <th class="border p-2">Item</th>
+            <th class="border p-2">Qty</th>
+            <th class="border p-2">Price</th>
+            <th class="border p-2">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody id="invoiceTable"></tbody>
+      </table>
+      <div class="text-right font-bold mt-2" id="invoiceTotal"></div>
+      <button onclick="generateInvoicePDF()" class="mt-4 bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">Download Invoice PDF</button>
+    </section>
+
+    <section class="bg-white p-4 rounded shadow mt-6">
+      <h2 class="text-xl font-semibold mb-2">Stock Chart</h2>
+      <canvas id="stockChart" height="100"></canvas>
+    </section>
+  </div>
+
+  <script>
+    let products = JSON.parse(localStorage.getItem('products') || '[]');
+    let invoiceItems = [];
+
+    function saveProducts() {
+      localStorage.setItem('products', JSON.stringify(products));
+    }
+
+    function addProduct() {
+      const name = pName.value.trim();
+      const qty = parseInt(pQty.value);
+      const price = parseFloat(pPrice.value);
+      if (!name || isNaN(qty) || isNaN(price)) return alert("Fill all fields correctly.");
+      const existing = products.find(p => p.name.toLowerCase() === name.toLowerCase());
+      if (existing) {
+        existing.qty += qty;
+        existing.price = price;
+      } else {
+        products.push({ name, qty, price });
+      }
+      saveProducts();
+      renderProducts();
+      pName.value = pQty.value = pPrice.value = "";
+    }
+
+    function deleteProduct(index) {
+      if (confirm("Delete this product?")) {
+        products.splice(index, 1);
+        saveProducts();
+        renderProducts();
+      }
+    }
+
+    function renderProducts() {
+      const table = document.getElementById("inventoryTable");
+      const query = searchBar.value.toLowerCase();
+      table.innerHTML = "";
+      let totalQty = 0;
+      let totalValue = 0;
+      products.forEach((p, i) => {
+        if (p.name.toLowerCase().includes(query)) {
+          const row = document.createElement("tr");
+          if (p.qty < 5) row.classList.add("low-stock");
+          row.innerHTML = `
+            <td class='border p-2'>${p.name}</td>
+            <td class='border p-2'>${p.qty}</td>
+            <td class='border p-2'>₹${p.price.toFixed(2)}</td>
+            <td class='border p-2'>₹${(p.qty * p.price).toFixed(2)}</td>
+            <td class='border p-2'>
+              <button onclick="deleteProduct(${i})" class="bg-red-500 text-white px-2 py-1 rounded">Delete</button>
+            </td>`;
+          table.appendChild(row);
+          totalQty += p.qty;
+          totalValue += p.qty * p.price;
+        }
+      });
+      document.getElementById("summary").innerText = `Total Inventory: ${products.length} | Total Stock: ${totalQty} | Total Value: ₹${totalValue.toFixed(2)}`;
+      renderStockLeft();
+      drawChart();
+    }
+
+    function renderStockLeft() {
+      const stockLeft = document.getElementById("stockLeftReport");
+      stockLeft.innerHTML = products.map(p => `<li>${p.name}: ${p.qty} left</li>`).join("");
+    }
+
+    function addInvoiceItem() {
+      const name = iName.value.trim();
+      const qty = parseInt(iQty.value);
+      const price = parseFloat(iPrice.value);
+      if (!name || isNaN(qty) || isNaN(price)) return alert("Fill all invoice fields correctly.");
+      const product = products.find(p => p.name.toLowerCase() === name.toLowerCase());
+      if (product && product.qty >= qty) {
+        product.qty -= qty;
+        saveProducts();
+        renderProducts();
+        invoiceItems.push({ name, qty, price });
+        renderInvoice();
+        renderSalesReport();
+        iName.value = iQty.value = iPrice.value = "";
+      } else {
+        alert("Not enough stock or product not found.");
+      }
+    }
+
+    function renderInvoice() {
+      const table = document.getElementById("invoiceTable");
+      let total = 0;
+      table.innerHTML = "";
+      invoiceItems.forEach(item => {
+        const subtotal = item.qty * item.price;
+        table.innerHTML += `
+          <tr>
+            <td class='border p-2'>${item.name}</td>
+            <td class='border p-2'>${item.qty}</td>
+            <td class='border p-2'>₹${item.price.toFixed(2)}</td>
+            <td class='border p-2'>₹${subtotal.toFixed(2)}</td>
+          </tr>`;
+        total += subtotal;
+      });
+      document.getElementById("invoiceTotal").innerText = `Total Invoice Amount: ₹${total.toFixed(2)}`;
+    }
+
+    function renderSalesReport() {
+      const list = document.getElementById("salesReport");
+      list.innerHTML = invoiceItems.map(i => `<li>${i.qty} x ${i.name} sold for ₹${(i.qty * i.price).toFixed(2)}</li>`).join("");
+    }
+
+    function generateInvoicePDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text("SmartBiz Invoice", 80, 10);
+      let y = 20, total = 0;
+      invoiceItems.forEach(item => {
+        const subtotal = item.qty * item.price;
+        doc.text(`${item.name} - Qty: ${item.qty} x ₹${item.price} = ₹${subtotal.toFixed(2)}`, 10, y);
+        y += 10;
+        total += subtotal;
+      });
+      doc.text(`Total Invoice Amount: ₹${total.toFixed(2)}`, 10, y + 10);
+      doc.text("Thank you for shopping at SmartBiz! Visit Again.", 40, y + 30);
+      doc.save("invoice.pdf");
+    }
+
+    function drawChart() {
+      const ctx = document.getElementById('stockChart').getContext('2d');
+      const labels = products.map(p => p.name);
+      const data = products.map(p => p.qty);
+      if (window.myChart) window.myChart.destroy();
+      window.myChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{ label: 'Stock Qty', data, backgroundColor: '#3b82f6' }]
+        }
+      });
+    }
+
+    renderProducts();
+  </script>
+</body>
+</html>
